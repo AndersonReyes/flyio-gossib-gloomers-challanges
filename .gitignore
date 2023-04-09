@@ -8,3 +8,4 @@ target/
 maelstrom/lib
 store
 .bsp
+project/project
