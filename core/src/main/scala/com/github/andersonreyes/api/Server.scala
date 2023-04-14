@@ -11,6 +11,9 @@ import com.github.andersonreyes.api.Message
 import java.io.StringWriter
 import java.io.PrintWriter
 import com.github.andersonreyes.api.Body
+import scala.collection.mutable.Queue
+import scala.concurrent.Future
+import scala.concurrent.ExecutionContext.Implicits.global
 
 trait Server {
   def handleMessage(msg: Message): Message
@@ -33,19 +36,24 @@ trait Server {
   }
 
   def serve: Unit = {
+    // val workers = new Queue[Future[_]](100)
+
     while (true) {
       val line = readLine()
-      val handled = decode[Message](line).flatMap(m =>
-        Try(handleMessage(m).asJson.noSpacesSortKeys).toEither
-      )
 
-      handled match {
-        case Left(err) => {
-          val errMsg = handleError(line, err)
-          println(errMsg.asJson.noSpacesSortKeys)
+      Future {
+        decode[Message](line).flatMap(m =>
+          Try(handleMessage(m).asJson.noSpacesSortKeys).toEither
+        )
+      }.map { handled =>
+        handled match {
+          case Left(err) => {
+            val errMsg = handleError(line, err)
+            println(errMsg.asJson.noSpacesSortKeys)
 
+          }
+          case Right(value) => println(value)
         }
-        case Right(value) => println(value)
       }
     }
   }
