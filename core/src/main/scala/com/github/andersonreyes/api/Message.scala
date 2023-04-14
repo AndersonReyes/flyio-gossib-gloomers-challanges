@@ -42,18 +42,29 @@ object Message {
       body: ErrorBody
   ) extends Message
 
+  @ConfiguredJsonCodec case class GenerateMessage(
+      src: String,
+      dest: String,
+      body: Generate
+  ) extends Message
+
+  @ConfiguredJsonCodec case class GenerateMessageOk(
+      src: String,
+      dest: String,
+      body: GenerateOk
+  ) extends Message
+
   implicit val decodeMessage: Decoder[Message] = List[Decoder[Message]](
     Decoder[EchoMessage].widen,
     // Decoder[EchoOkMessage].widen,
-    Decoder[InitMessage].widen
+    Decoder[InitMessage].widen,
+    Decoder[GenerateMessage].widen
     // Decoder[InitOkMessage].widen
   ).reduceLeft(_ or _)
 
   implicit val encodeMessage: Encoder[Message] = Encoder.instance {
-    case echo: EchoMessage     => echo.asJson
     case echoOk: EchoOkMessage => echoOk.asJson
-    case init: InitMessage     => init.asJson
     case initOk: InitOkMessage => initOk.asJson
-    case err: ErrorMessage     => err.asJson
+    case g: GenerateMessageOk  => g.asJson
   }
 }

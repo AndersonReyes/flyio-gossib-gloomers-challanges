@@ -35,4 +35,20 @@ object Body {
       text: String,
       `type`: String = "error"
   )
+
+  @ConfiguredJsonCodec case class Generate(
+      msgId: Int,
+      `type`: String = "generate"
+  ) {
+    // So that when messages get decoded over network with invalid type,
+    // this throws an error
+    require(`type` == "generate")
+  }
+
+  @ConfiguredJsonCodec case class GenerateOk(
+      id: String,
+      msgId: Int,
+      @JsonKey("in_reply_to") replyTo: Int,
+      `type`: String = "generate_ok"
+  )
 }
