@@ -13,6 +13,7 @@ import java.io.PrintWriter
 import com.github.andersonreyes.api.Body
 import scala.concurrent.Future
 import scala.concurrent.ExecutionContext.Implicits.global
+import java.io.File
 
 trait Server {
   def handleMessage(msg: Message): Message
@@ -35,8 +36,6 @@ trait Server {
   }
 
   def serve: Unit = {
-    // val workers = new Queue[Future[_]](100)
-
     while (true) {
       val line = readLine()
 

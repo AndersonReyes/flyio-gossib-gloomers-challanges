@@ -39,7 +39,7 @@ object Body {
   )
 
   @ConfiguredJsonCodec case class TopologyOk(
-      msgId: Int
+      @JsonKey("in_reply_to") replyTo: Int
   )
   @ConfiguredJsonCodec case class GenerateOk(
       id: String,
@@ -53,12 +53,12 @@ object Body {
   )
 
   @ConfiguredJsonCodec case class BroadcastOk(
-      msgId: Int
+      @JsonKey("in_reply_to") replyTo: Int
   )
 
   @ConfiguredJsonCodec case class Read(msgId: Int)
   @ConfiguredJsonCodec case class ReadOk(
       messages: List[Int],
-      msgId: Int
+      @JsonKey("in_reply_to") replyTo: Int
   )
 }
