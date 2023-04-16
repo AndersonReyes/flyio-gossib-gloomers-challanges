@@ -13,6 +13,7 @@ import java.io.PrintWriter
 import com.github.andersonreyes.api.Body
 import scala.concurrent.Future
 import scala.concurrent.ExecutionContext.Implicits.global
+import java.io.File
 
 trait Server {
   def handleMessage(msg: Message): Message
@@ -35,25 +36,28 @@ trait Server {
   }
 
   def serve: Unit = {
-    // val workers = new Queue[Future[_]](100)
-
     while (true) {
       val line = readLine()
 
       val f = Future {
-        decode[Message](line).flatMap(m =>
-          Try(handleMessage(m).asJson.noSpacesSortKeys).toEither
-        )
+        Try(decode[Message](line))
+          .map(_.map(handleMessage(_).asJson.noSpacesSortKeys))
       }
 
       f foreach { handled =>
         handled match {
-          case Left(err) => {
+          case Success(Left(err)) => {
             val errMsg = handleError(line, err)
-            println(errMsg.asJson.noSpacesSortKeys)
+            val msg = errMsg.asJson.noSpacesSortKeys
+            println(msg)
+          }
+          case Failure(err) => {
+            val errMsg = handleError(line, err)
+            val msg = errMsg.asJson.noSpacesSortKeys
+            println(msg)
 
           }
-          case Right(value) => println(value)
+          case Success(Right(value)) => println(value)
         }
       }
     }

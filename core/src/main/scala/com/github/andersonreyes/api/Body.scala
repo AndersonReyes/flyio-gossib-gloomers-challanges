@@ -7,48 +7,58 @@ object Body {
 
   @ConfiguredJsonCodec case class Echo(
       msgId: Int,
-      echo: String,
-      `type`: String = "echo"
+      echo: String
   )
   @ConfiguredJsonCodec case class EchoOk(
       msgId: Int,
       echo: String,
-      @JsonKey("in_reply_to") replyTo: Int,
-      `type`: String = "echo_ok"
+      @JsonKey("in_reply_to") replyTo: Int
   )
 
   @ConfiguredJsonCodec case class Init(
       msgId: Int,
       nodeId: String,
-      nodeIds: List[String],
-      `type`: String = "init"
+      nodeIds: List[String]
   )
-
   @ConfiguredJsonCodec case class InitOk(
-      @JsonKey("in_reply_to") replyTo: Int,
-      `type`: String = "init_ok"
+      @JsonKey("in_reply_to") replyTo: Int
   )
 
   @ConfiguredJsonCodec case class ErrorBody(
       @JsonKey("in_reply_to") replyTo: Int,
       code: Int,
-      text: String,
-      `type`: String = "error"
+      text: String
   )
 
   @ConfiguredJsonCodec case class Generate(
-      msgId: Int,
-      `type`: String = "generate"
-  ) {
-    // So that when messages get decoded over network with invalid type,
-    // this throws an error
-    require(`type` == "generate")
-  }
+      msgId: Int
+  )
+  @ConfiguredJsonCodec case class Topology(
+      topology: Map[String, List[String]],
+      msgId: Int
+  )
 
+  @ConfiguredJsonCodec case class TopologyOk(
+      @JsonKey("in_reply_to") replyTo: Int
+  )
   @ConfiguredJsonCodec case class GenerateOk(
       id: String,
       msgId: Int,
-      @JsonKey("in_reply_to") replyTo: Int,
-      `type`: String = "generate_ok"
+      @JsonKey("in_reply_to") replyTo: Int
+  )
+
+  @ConfiguredJsonCodec case class Broadcast(
+      msgId: Int,
+      message: Int
+  )
+
+  @ConfiguredJsonCodec case class BroadcastOk(
+      @JsonKey("in_reply_to") replyTo: Int
+  )
+
+  @ConfiguredJsonCodec case class Read(msgId: Int)
+  @ConfiguredJsonCodec case class ReadOk(
+      messages: List[Int],
+      @JsonKey("in_reply_to") replyTo: Int
   )
 }
