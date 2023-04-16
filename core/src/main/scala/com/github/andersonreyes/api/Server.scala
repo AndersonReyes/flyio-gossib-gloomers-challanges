@@ -41,19 +41,24 @@ trait Server {
       val line = readLine()
 
       val f = Future {
-        decode[Message](line).flatMap(m =>
-          Try(handleMessage(m).asJson.noSpacesSortKeys).toEither
-        )
+        Try(decode[Message](line))
+          .map(_.map(handleMessage(_).asJson.noSpacesSortKeys))
       }
 
       f foreach { handled =>
         handled match {
-          case Left(err) => {
+          case Success(Left(err)) => {
             val errMsg = handleError(line, err)
-            println(errMsg.asJson.noSpacesSortKeys)
+            val msg = errMsg.asJson.noSpacesSortKeys
+            println(msg)
+          }
+          case Failure(err) => {
+            val errMsg = handleError(line, err)
+            val msg = errMsg.asJson.noSpacesSortKeys
+            println(msg)
 
           }
-          case Right(value) => println(value)
+          case Success(Right(value)) => println(value)
         }
       }
     }
