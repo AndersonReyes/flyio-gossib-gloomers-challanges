@@ -12,8 +12,7 @@ object Body {
   @ConfiguredJsonCodec case class EchoOk(
       msgId: Int,
       echo: String,
-      @JsonKey("in_reply_to") replyTo: Int,
-      `type`: String = "echo_ok"
+      @JsonKey("in_reply_to") replyTo: Int
   )
 
   @ConfiguredJsonCodec case class Init(
@@ -22,15 +21,13 @@ object Body {
       nodeIds: List[String]
   )
   @ConfiguredJsonCodec case class InitOk(
-      @JsonKey("in_reply_to") replyTo: Int,
-      `type`: String = "init_ok"
+      @JsonKey("in_reply_to") replyTo: Int
   )
 
   @ConfiguredJsonCodec case class ErrorBody(
       @JsonKey("in_reply_to") replyTo: Int,
       code: Int,
-      text: String,
-      `type`: String = "error"
+      text: String
   )
 
   @ConfiguredJsonCodec case class Generate(
@@ -42,14 +39,12 @@ object Body {
   )
 
   @ConfiguredJsonCodec case class TopologyOk(
-      msgId: Int,
-      `type`: String = "topology_ok"
+      msgId: Int
   )
   @ConfiguredJsonCodec case class GenerateOk(
       id: String,
       msgId: Int,
-      @JsonKey("in_reply_to") replyTo: Int,
-      `type`: String = "generate_ok"
+      @JsonKey("in_reply_to") replyTo: Int
   )
 
   @ConfiguredJsonCodec case class Broadcast(
@@ -58,14 +53,12 @@ object Body {
   )
 
   @ConfiguredJsonCodec case class BroadcastOk(
-      msgId: Int,
-      `type`: String = "broadcast_ok"
+      msgId: Int
   )
 
   @ConfiguredJsonCodec case class Read(msgId: Int)
   @ConfiguredJsonCodec case class ReadOk(
       messages: List[Int],
-      msgId: Int,
-      `type`: String = "read_ok"
+      msgId: Int
   )
 }

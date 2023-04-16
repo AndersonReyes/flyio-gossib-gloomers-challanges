@@ -121,11 +121,41 @@ object Message {
   })
 
   implicit val encodeMessage: Encoder[Message] = Encoder.instance {
-    case echoOk: EchoOkMessage => echoOk.asJson
-    case initOk: InitOkMessage => initOk.asJson
-    case g: GenerateMessageOk  => g.asJson
-    case t: TopologyOkMessage  => t.asJson
-    case b: BroadcastOkMessage => b.asJson
-    case r: ReadOkMessage      => r.asJson
+    case echoOk: EchoOkMessage =>
+      echoOk.asJson.hcursor
+        .downField("body")
+        .withFocus(_.mapObject(g => g.+:(("type", "echo_ok".asJson))))
+        .top
+        .get
+    case initOk: InitOkMessage =>
+      initOk.asJson.hcursor
+        .downField("body")
+        .withFocus(_.mapObject(g => g.+:(("type", "init_ok".asJson))))
+        .top
+        .get
+    case g: GenerateMessageOk =>
+      g.asJson.hcursor
+        .downField("body")
+        .withFocus(_.mapObject(g => g.+:(("type", "generate_ok".asJson))))
+        .top
+        .get
+    case t: TopologyOkMessage =>
+      t.asJson.hcursor
+        .downField("body")
+        .withFocus(_.mapObject(g => g.+:(("type", "topology_ok".asJson))))
+        .top
+        .get
+    case b: BroadcastOkMessage =>
+      b.asJson.hcursor
+        .downField("body")
+        .withFocus(_.mapObject(g => g.+:(("type", "broadcast_ok".asJson))))
+        .top
+        .get
+    case r: ReadOkMessage =>
+      r.asJson.hcursor
+        .downField("body")
+        .withFocus(_.mapObject(g => g.+:(("type", "read_ok".asJson))))
+        .top
+        .get
   }
 }

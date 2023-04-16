@@ -4,3 +4,5 @@
 {"src":"c1","dest":"n1","body":{"type":"broadcast", "message":1}}
 {"src":"c1","dest":"n1","body":{"type":"read"}}
 {"id":2,"src":"c1","dest":"n0","body":{"type":"topology","topology":{"n0":[]},"msg_id":1}}
+{"id":2,"src":"c1","dest":"n0","body":{"type":"read","msg_id":1}}
+{"id":2,"src":"c1","dest":"n0","body":{"type":"broadcast", "message": 1000,"msg_id":1}}
