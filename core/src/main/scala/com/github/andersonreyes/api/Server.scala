@@ -11,7 +11,6 @@ import com.github.andersonreyes.api.Message
 import java.io.StringWriter
 import java.io.PrintWriter
 import com.github.andersonreyes.api.Body
-import scala.collection.mutable.Queue
 import scala.concurrent.Future
 import scala.concurrent.ExecutionContext.Implicits.global
 
@@ -41,11 +40,13 @@ trait Server {
     while (true) {
       val line = readLine()
 
-      Future {
+      val f = Future {
         decode[Message](line).flatMap(m =>
           Try(handleMessage(m).asJson.noSpacesSortKeys).toEither
         )
-      }.map { handled =>
+      }
+
+      f foreach { handled =>
         handled match {
           case Left(err) => {
             val errMsg = handleError(line, err)
