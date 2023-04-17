@@ -1,22 +1,25 @@
 package com.github.andersonreyes.api
 
+import com.github.andersonreyes.api.Body
+import com.github.andersonreyes.api.Message._
 import com.github.andersonreyes.api.Node
-import com.github.andersonreyes.api.Message
+import io.circe._
+import io.circe.generic.auto._
+import io.circe.parser._
+import io.circe.syntax._
+
+import java.io.File
+import java.io.PrintWriter
+import java.io.StringWriter
 import scala.io.StdIn.readLine
-import scala.util.Try
-import io.circe._, io.circe.generic.auto._, io.circe.syntax._, io.circe.parser._
 import scala.util.Failure
 import scala.util.Success
-import com.github.andersonreyes.api.Message
-import java.io.StringWriter
-import java.io.PrintWriter
-import com.github.andersonreyes.api.Body
-import scala.concurrent.Future
-import scala.concurrent.ExecutionContext.Implicits.global
-import java.io.File
+import scala.util.Try
+import cats.data.Op
 
 trait Server {
-  def handleMessage(msg: Message): Message
+  def handleMessage(msg: Message): Option[Message]
+
   def handleError(line: String, err: Throwable): Message = {
     val sw = new StringWriter()
     val pw = new PrintWriter(sw)
@@ -36,29 +39,20 @@ trait Server {
   }
 
   def serve: Unit = {
+
     while (true) {
       val line = readLine()
 
-      val f = Future {
-        Try(decode[Message](line))
-          .map(_.map(handleMessage(_).asJson.noSpacesSortKeys))
-      }
+      val f: Try[Option[Message]] = line.parseJson[Message].map(handleMessage)
 
-      f foreach { handled =>
-        handled match {
-          case Success(Left(err)) => {
-            val errMsg = handleError(line, err)
-            val msg = errMsg.asJson.noSpacesSortKeys
-            println(msg)
-          }
-          case Failure(err) => {
-            val errMsg = handleError(line, err)
-            val msg = errMsg.asJson.noSpacesSortKeys
-            println(msg)
+      f match {
+        case Failure(err) => {
+          val errMsg = handleError(line, err)
+          val msg = errMsg.asJson.noSpacesSortKeys
+          println(msg)
 
-          }
-          case Success(Right(value)) => println(value)
         }
+        case Success(value) => value.map(_.toJsonString).foreach(println)
       }
     }
   }

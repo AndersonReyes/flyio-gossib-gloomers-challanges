@@ -1,16 +1,18 @@
 package com.github.andersonreyes.api
 
 import com.github.andersonreyes.api.Body._
+import io.circe._
 import io.circe.generic.extras._
-import cats.syntax.functor._
-import io.circe.{Decoder, Encoder}, io.circe.generic.auto._
+import io.circe.parser._
 import io.circe.syntax._
-import io.circe.HCursor
-import io.circe.JsonObject
-import java.util.Base64
-import io.circe.DecodingFailure
 
-trait Message
+import java.util.Base64
+import scala.util.Try
+
+trait Message {
+  val src: String
+  val dest: String
+}
 
 object Message {
   import com.github.andersonreyes.api.Config._
@@ -94,15 +96,6 @@ object Message {
       body: ReadOk
   ) extends Message
 
-//   implicit val decodeMessage: Decoder[Message] = List[Decoder[Message]](
-//     Decoder[EchoMessage].widen,
-//     Decoder[InitMessage].widen,
-//     Decoder[GenerateMessage].widen,
-//     Decoder[TopologyMessage].widen,
-//     Decoder[BroadcastMessage].widen,
-//     Decoder[ReadMessage].widen
-//   ).reduceLeft(_ or _)
-
   implicit val decodeMessage: Decoder[Message] = Decoder.instance(h => {
     h.downField("body")
       .downField("type")
@@ -158,4 +151,14 @@ object Message {
         .top
         .get
   }
+
+  implicit class MassageFromString(s: String) {
+    def parseJson[T <: Message: Decoder]: Try[T] =
+      Try(decode[T](s)).flatMap(_.toTry)
+  }
+
+  implicit class MessageImplicits(m: Message) {
+    def toJsonString: String = m.asJson(encodeMessage).noSpacesSortKeys
+  }
+
 }
