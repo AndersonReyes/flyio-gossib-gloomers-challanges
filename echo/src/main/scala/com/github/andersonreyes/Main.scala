@@ -17,8 +17,18 @@ object Main extends App {
 
   init match {
     case Failure(exception) => {
-      println("failed to initialize server")
-      System.exit(97)
+      val err = ErrorMessage(
+        "",
+        "",
+        Body.ErrorBody(
+          -1,
+          -1,
+          s"failed to initialize server: ${exception.getMessage()}"
+        )
+      ).toJsonString
+
+      println(err)
+      System.exit(1)
     }
 
     case Success(value) => {

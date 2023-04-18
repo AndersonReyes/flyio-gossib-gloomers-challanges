@@ -42,32 +42,39 @@ class Node private (
       // Should we put sent messages in a temp buffer and ack when we receive this?
       case BroadcastOkMessage(src, dest, body) => List.empty[Message]
 
-      case BroadcastMessage(src, dest, body) => {
-        // add msg to seen map
-        seenMessages = seenMessages.updated(
-          src,
-          seenMessages.getOrElse(src, Set.empty[Int]) + body.message
-        )
+      case BroadcastMessage(src, _, body) => {
+
+        seenMessages = seenMessages
+          .updated(
+            src,
+            seenMessages.getOrElse(src, Set.empty[Int]) + body.message
+          )
 
         // Broadcast to neighbors
-
-        val out = BroadcastOkMessage(
+        val ok = BroadcastOkMessage(
           nodeId,
           src,
           BroadcastOk(body.msgId)
         )
 
-        // Broadcast to neighbors who have not seen this message already
-        out +: seenMessages
-          .filterNot(_._2.contains(body.msgId))
-          .map { case (neighborId, msgs) =>
+        // Broadcast entire state to neighbors who have not seen this message already
+        // grab all the messages seen
+        val allMsgs = seenMessages.values
+          .reduceOption(_ ++ _)
+          .getOrElse(Set.empty[Int])
+        val out = seenMessages.flatMap { case (dest, nodeMsgs) =>
+          // send only the diff. Exclude msgs node already knows about
+          (allMsgs diff nodeMsgs).map(m =>
             BroadcastMessage(
               nodeId,
-              neighborId,
-              Broadcast(body.msgId, body.message)
+              dest,
+              Broadcast(body.msgId, m)
             )
-          }
-          .toList
+          )
+
+        }.toList :+ ok
+
+        out
       }
 
       case ReadMessage(src, dest, body) =>
@@ -75,7 +82,13 @@ class Node private (
           ReadOkMessage(
             nodeId,
             src,
-            ReadOk(seenMessages(nodeId).toList, body.msgId)
+            ReadOk(
+              seenMessages.values
+                .reduceOption(_ ++ _)
+                .map(_.toList)
+                .getOrElse(List.empty[Int]),
+              body.msgId
+            )
           )
         )
     }

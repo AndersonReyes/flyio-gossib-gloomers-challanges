@@ -32,8 +32,8 @@ trait Server {
       Body.ErrorBody(
         -1,
         13,
-        s"Failed to parse line $line with error: ${err
-          .getMessage()}. and stack trace: ${sw.toString()}"
+        s"""Failed to parse line $line with error: ${err
+          .getMessage()}. and stack trace: ${sw.toString()}"""
       )
     )
   }
@@ -48,7 +48,7 @@ trait Server {
       f match {
         case Failure(err) => {
           val errMsg = handleError(line, err)
-          val msg = errMsg.asJson.noSpacesSortKeys
+          val msg = errMsg.toJsonString
           println(msg)
 
         }
