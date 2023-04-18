@@ -13,38 +13,52 @@ class Node(nodeId: String, private var neighbors: List[String] = List())
 
   private var messages: mutable.Set[Int] = mutable.Set.empty[Int]
 
-  override def handleMessage(msg: Message): Option[Message] = if (
-    // If the message is not for this node return none
+  override def handleMessage(msg: Message): List[Message] = if (
+    // If the message is not for this node, ignore
     msg.dest != nodeId
-  ) { None }
+  ) { List.empty[Message] }
   else {
-    val response = msg match {
+    msg match {
       case EchoMessage(src, dest, body) =>
-        EchoOkMessage(nodeId, src, EchoOk(body.msgId, body.echo, body.msgId))
+        List(
+          EchoOkMessage(nodeId, src, EchoOk(body.msgId, body.echo, body.msgId))
+        )
       // case init: InitMessage =>
       //   InitOkMessage(init.dest, init.src, InitOk(init.body.msgId))
       case GenerateMessage(src, dest, body) =>
-        GenerateMessageOk(
-          nodeId,
-          src,
-          GenerateOk(randomUUID().toString(), body.msgId, body.msgId)
+        List(
+          GenerateMessageOk(
+            nodeId,
+            src,
+            GenerateOk(randomUUID().toString(), body.msgId, body.msgId)
+          )
         )
 
       case TopologyMessage(src, dest, body) => {
         neighbors = body.topology(nodeId)
-        TopologyOkMessage(nodeId, src, TopologyOk(body.msgId))
+        List(TopologyOkMessage(nodeId, src, TopologyOk(body.msgId)))
       }
+
+      case BroadcastOkMessage(src, dest, body) => List.empty[Message]
 
       case BroadcastMessage(src, dest, body) => {
         messages += body.message
-        BroadcastOkMessage(nodeId, src, BroadcastOk(body.msgId))
+
+        // Broadcast to neighbors synchronously
+
+        BroadcastOkMessage(nodeId, src, BroadcastOk(body.msgId)) +: neighbors
+          .map(dest =>
+            BroadcastMessage(
+              nodeId,
+              dest,
+              Broadcast(body.msgId, body.message)
+            )
+          )
       }
 
       case ReadMessage(src, dest, body) =>
-        ReadOkMessage(nodeId, src, ReadOk(messages.toList, body.msgId))
+        List(ReadOkMessage(nodeId, src, ReadOk(messages.toList, body.msgId)))
     }
-
-    Some(response)
   }
 
 }

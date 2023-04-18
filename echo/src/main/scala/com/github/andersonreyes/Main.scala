@@ -32,6 +32,7 @@ object Main extends App {
       val node =
         new Node(
           value.body.nodeId,
+          // use random sample to build initial neighbors until we get a topology message
           Random.shuffle(value.body.nodeIds).take(3)
         )
 

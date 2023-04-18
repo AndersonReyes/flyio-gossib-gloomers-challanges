@@ -18,7 +18,7 @@ import scala.util.Try
 import cats.data.Op
 
 trait Server {
-  def handleMessage(msg: Message): Option[Message]
+  def handleMessage(msg: Message): List[Message]
 
   def handleError(line: String, err: Throwable): Message = {
     val sw = new StringWriter()
@@ -43,7 +43,7 @@ trait Server {
     while (true) {
       val line = readLine()
 
-      val f: Try[Option[Message]] = line.parseJson[Message].map(handleMessage)
+      val f: Try[List[Message]] = line.parseJson[Message].map(handleMessage)
 
       f match {
         case Failure(err) => {

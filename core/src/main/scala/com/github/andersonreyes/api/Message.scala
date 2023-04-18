@@ -107,13 +107,22 @@ object Message {
         case "generate"  => Decoder[GenerateMessage].tryDecode(h)
         case "topology"  => Decoder[TopologyMessage].tryDecode(h)
         case "broadcast" => Decoder[BroadcastMessage].tryDecode(h)
-        case "read"      => Decoder[ReadMessage].tryDecode(h)
+        // Since nodes can send broadcast ok then we need to be able to receive/decode
+        case "broadcast_ok" => Decoder[BroadcastOkMessage].tryDecode(h)
+        case "read"         => Decoder[ReadMessage].tryDecode(h)
         case invalid =>
           Left(DecodingFailure(s"invalid body type $invalid", h.history))
       }
   })
 
   implicit val encodeMessage: Encoder[Message] = Encoder.instance {
+    // Nodes can generate broadcast messages themselves
+    case broadcast: BroadcastMessage =>
+      broadcast.asJson.hcursor
+        .downField("body")
+        .withFocus(_.mapObject(g => g.+:(("type", "broadcast".asJson))))
+        .top
+        .get
     case echoOk: EchoOkMessage =>
       echoOk.asJson.hcursor
         .downField("body")
