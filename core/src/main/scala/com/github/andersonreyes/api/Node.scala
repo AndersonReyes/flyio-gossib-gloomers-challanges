@@ -8,10 +8,10 @@ import scala.collection.mutable
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.Future
 
-class Node(nodeId: String, private var neighbors: List[String] = List())
-    extends Server {
-
-  private var messages: mutable.Set[Int] = mutable.Set.empty[Int]
+class Node private (
+    nodeId: String,
+    private var seenMessages: Map[String, Set[Int]]
+) extends Server {
 
   override def handleMessage(msg: Message): List[Message] = if (
     // If the message is not for this node, ignore
@@ -35,30 +35,55 @@ class Node(nodeId: String, private var neighbors: List[String] = List())
         )
 
       case TopologyMessage(src, dest, body) => {
-        neighbors = body.topology(nodeId)
+        seenMessages = body.topology(nodeId).map((_, Set.empty[Int])).toMap
         List(TopologyOkMessage(nodeId, src, TopologyOk(body.msgId)))
       }
 
+      // Should we put sent messages in a temp buffer and ack when we receive this?
       case BroadcastOkMessage(src, dest, body) => List.empty[Message]
 
       case BroadcastMessage(src, dest, body) => {
-        messages += body.message
+        // add msg to seen map
+        seenMessages = seenMessages.updated(
+          src,
+          seenMessages.getOrElse(src, Set.empty[Int]) + body.message
+        )
 
-        // Broadcast to neighbors synchronously
+        // Broadcast to neighbors
 
-        BroadcastOkMessage(nodeId, src, BroadcastOk(body.msgId)) +: neighbors
-          .map(dest =>
+        val out = BroadcastOkMessage(
+          nodeId,
+          src,
+          BroadcastOk(body.msgId)
+        )
+
+        // Broadcast to neighbors who have not seen this message already
+        out +: seenMessages
+          .filterNot(_._2.contains(body.msgId))
+          .map { case (neighborId, msgs) =>
             BroadcastMessage(
               nodeId,
-              dest,
+              neighborId,
               Broadcast(body.msgId, body.message)
             )
-          )
+          }
+          .toList
       }
 
       case ReadMessage(src, dest, body) =>
-        List(ReadOkMessage(nodeId, src, ReadOk(messages.toList, body.msgId)))
+        List(
+          ReadOkMessage(
+            nodeId,
+            src,
+            ReadOk(seenMessages(nodeId).toList, body.msgId)
+          )
+        )
     }
   }
 
+}
+
+object Node {
+  def of(nodeId: String, neighbors: List[String]): Node =
+    new Node(nodeId, neighbors.map((_, Set.empty[Int])).toMap)
 }
