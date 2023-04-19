@@ -17,8 +17,18 @@ object Main extends App {
 
   init match {
     case Failure(exception) => {
-      println("failed to initialize server")
-      System.exit(97)
+      val err = ErrorMessage(
+        "",
+        "",
+        Body.ErrorBody(
+          -1,
+          -1,
+          s"failed to initialize server: ${exception.getMessage()}"
+        )
+      ).toJsonString
+
+      println(err)
+      System.exit(1)
     }
 
     case Success(value) => {
@@ -30,13 +40,7 @@ object Main extends App {
       println(out.toJsonString)
 
       val node =
-        Node.of(
-          value.body.nodeId,
-          // use random sample to build initial neighbors until we get a topology message
-          Random
-            .shuffle(value.body.nodeIds)
-            .take(3)
-        )
+        Node.of(value.body.nodeId, value.body.nodeIds)
 
       node.serve
     }

@@ -159,11 +159,18 @@ object Message {
         .withFocus(_.mapObject(g => g.+:(("type", "read_ok".asJson))))
         .top
         .get
+
+    case err: ErrorMessage =>
+      err.asJson.hcursor
+        .downField("body")
+        .withFocus(_.mapObject(g => g.+:(("type", "error".asJson))))
+        .top
+        .get
   }
 
   implicit class MassageFromString(s: String) {
     def parseJson[T <: Message: Decoder]: Try[T] =
-      Try(decode[T](s)).flatMap(_.toTry)
+      Try { decode[T](s) }.flatMap(_.toTry)
   }
 
   implicit class MessageImplicits(m: Message) {

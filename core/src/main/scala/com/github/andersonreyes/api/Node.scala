@@ -2,6 +2,7 @@ package com.github.andersonreyes.api
 
 import com.github.andersonreyes.api.Body._
 import com.github.andersonreyes.api.Message._
+import com.github.andersonreyes.api.Counter
 
 import java.util.UUID.randomUUID
 import scala.collection.mutable
@@ -10,8 +11,10 @@ import scala.concurrent.Future
 
 class Node private (
     nodeId: String,
-    private var seenMessages: Map[String, Set[Int]]
+    private var neighbors: Map[String, Set[Long]]
 ) extends Server {
+
+  private var nodeMsgs: Set[Long] = Set()
 
   override def handleMessage(msg: Message): List[Message] = if (
     // If the message is not for this node, ignore
@@ -21,7 +24,11 @@ class Node private (
     msg match {
       case EchoMessage(src, dest, body) =>
         List(
-          EchoOkMessage(nodeId, src, EchoOk(body.msgId, body.echo, body.msgId))
+          EchoOkMessage(
+            nodeId,
+            src,
+            EchoOk(Counter.increment, body.echo, body.msgId)
+          )
         )
       // case init: InitMessage =>
       //   InitOkMessage(init.dest, init.src, InitOk(init.body.msgId))
@@ -30,54 +37,53 @@ class Node private (
           GenerateMessageOk(
             nodeId,
             src,
-            GenerateOk(randomUUID().toString(), body.msgId, body.msgId)
+            GenerateOk(randomUUID().toString(), Counter.increment, body.msgId)
           )
         )
 
       case TopologyMessage(src, dest, body) => {
-        seenMessages = body.topology(nodeId).map((_, Set.empty[Int])).toMap
+        neighbors = body.topology(nodeId).map((_, Set.empty[Long])).toMap
         List(TopologyOkMessage(nodeId, src, TopologyOk(body.msgId)))
       }
 
       // Should we put sent messages in a temp buffer and ack when we receive this?
-      case BroadcastOkMessage(src, dest, body) => List.empty[Message]
-
-      case BroadcastMessage(src, dest, body) => {
-        // add msg to seen map
-        seenMessages = seenMessages.updated(
+      case BroadcastOkMessage(src, _, body) => {
+        neighbors = neighbors.updated(
           src,
-          seenMessages.getOrElse(src, Set.empty[Int]) + body.message
+          neighbors.getOrElse(src, Set.empty[Long]) + body.replyTo
         )
+        List.empty[Message]
+      }
 
-        // Broadcast to neighbors
+      case BroadcastMessage(src, _, body) => {
 
-        val out = BroadcastOkMessage(
+        nodeMsgs = nodeMsgs + body.message
+
+        val ok = BroadcastOkMessage(
           nodeId,
           src,
           BroadcastOk(body.msgId)
         )
 
-        // Broadcast to neighbors who have not seen this message already
-        out +: seenMessages
-          .filterNot(_._2.contains(body.msgId))
-          .map { case (neighborId, msgs) =>
+        // Broadcast entire state to neighbors who have not seen this message already
+        // grab all the messages seen
+        val broadcastMsgs = neighbors.flatMap { case (neighbor, neighborMsgs) =>
+          // send only the diff. Exclude msgs node already knows about
+          (nodeMsgs diff neighborMsgs).map(m =>
             BroadcastMessage(
               nodeId,
-              neighborId,
-              Broadcast(body.msgId, body.message)
+              neighbor,
+              Broadcast(m, m)
             )
-          }
-          .toList
+          )
+
+        }.toList
+
+        ok +: broadcastMsgs
       }
 
-      case ReadMessage(src, dest, body) =>
-        List(
-          ReadOkMessage(
-            nodeId,
-            src,
-            ReadOk(seenMessages(nodeId).toList, body.msgId)
-          )
-        )
+      case ReadMessage(src, _, body) =>
+        List(ReadOkMessage(nodeId, src, ReadOk(nodeMsgs.toList, body.msgId)))
     }
   }
 
@@ -85,5 +91,5 @@ class Node private (
 
 object Node {
   def of(nodeId: String, neighbors: List[String]): Node =
-    new Node(nodeId, neighbors.map((_, Set.empty[Int])).toMap)
+    new Node(nodeId, neighbors.map((_, Set.empty[Long])).toMap)
 }
