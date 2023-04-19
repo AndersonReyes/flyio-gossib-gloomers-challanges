@@ -40,13 +40,7 @@ object Main extends App {
       println(out.toJsonString)
 
       val node =
-        Node.of(
-          value.body.nodeId,
-          // use random sample to build initial neighbors until we get a topology message
-          Random
-            .shuffle(value.body.nodeIds)
-            .take(3)
-        )
+        Node.of(value.body.nodeId, value.body.nodeIds)
 
       node.serve
     }
