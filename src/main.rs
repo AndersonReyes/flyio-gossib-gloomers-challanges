@@ -178,6 +178,8 @@ impl Node {
                 self.messages.insert(message);
 
                 // for each neighbor initiate gossip with the updated messsages vector
+                // // TODO: to reduce the number of messages per broadcast can we pick 3 nodes at
+                // random? instead of sending to all.
                 let neighbors: Vec<String> = self.topology.keys().map(|k| k.clone()).collect();
 
                 for node_id in neighbors {
