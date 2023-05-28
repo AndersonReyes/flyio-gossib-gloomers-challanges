@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Result;
+use std::collections::{HashMap, HashSet};
 use std::io;
 use uuid::Uuid;
 
@@ -34,6 +35,34 @@ enum Body {
         msg_id: u64,
         in_reply_to: u64,
     },
+
+    #[serde(rename = "topology")]
+    Topology {
+        msg_id: u64,
+        topology: HashMap<String, Vec<String>>,
+    },
+    #[serde(rename = "topology_ok")]
+    TopologyOk { msg_id: u64, in_reply_to: u64 },
+
+    #[serde(rename = "broadcast")]
+    Broadcast { msg_id: u64, message: u64 },
+    #[serde(rename = "broadcast_ok")]
+    BroadcastOk { msg_id: u64, in_reply_to: u64 },
+
+    #[serde(rename = "read")]
+    Read { msg_id: u64 },
+    #[serde(rename = "read_ok")]
+    ReadOk {
+        msg_id: u64,
+        in_reply_to: u64,
+        messages: Vec<u64>,
+    },
+
+    #[serde(rename = "shutdown")]
+    Shutdown,
+
+    #[serde(rename = "noop")]
+    NoOp,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -43,50 +72,115 @@ struct Message {
     pub body: Body,
 }
 
-impl Message {
-    fn reply(&self, next_msg_id: u64) -> Message {
-        let out_body = match &self.body {
-            Body::Init { msg_id, .. } => Body::InitOk {
-                in_reply_to: *msg_id,
-                msg_id: next_msg_id,
-            },
-            Body::Echo { msg_id, echo } => Body::EchoOk {
-                msg_id: next_msg_id,
-                in_reply_to: *msg_id,
-                echo: echo.clone(),
-            },
-            Body::Generate { msg_id } => Body::GenerateOk {
-                id: Uuid::new_v4().to_string(),
-                msg_id: next_msg_id,
-                in_reply_to: *msg_id,
-            },
-
-            _ => panic!("invalid message {:#?}", self),
-        };
-
-        Message {
-            src: self.dest.clone(),
-            dest: self.src.clone(),
-            body: out_body,
-        }
-    }
-}
-
 struct Node {
     counter: u64,
+    topology: HashMap<String, Vec<String>>,
+    node_id: String,
+    messages: HashSet<u64>,
 }
 
 impl Node {
     pub fn new() -> Self {
-        Self { counter: 0 }
+        Self {
+            counter: 0,
+            topology: HashMap::new(),
+            messages: HashSet::new(),
+            node_id: String::new(),
+        }
     }
 
     fn gen_msg_id(&mut self) -> u64 {
         self.counter += 1;
         self.counter
     }
+
+    fn handler(&mut self, msg: Message) -> Vec<Message> {
+        let next_msg_id = self.gen_msg_id();
+
+        // allows us to inject other messages in the output as well.
+        // See Broadcast handler for example.
+        let mut outputs: Vec<Message> = vec![];
+
+        let out_body: Body = match msg.body {
+            Body::Init {
+                msg_id, node_id, ..
+            } => {
+                self.node_id = node_id;
+
+                Body::InitOk {
+                    in_reply_to: msg_id,
+                    msg_id: next_msg_id,
+                }
+            }
+            Body::Echo { msg_id, echo } => Body::EchoOk {
+                msg_id: next_msg_id,
+                in_reply_to: msg_id,
+                echo: echo.clone(),
+            },
+            Body::Generate { msg_id } => Body::GenerateOk {
+                id: Uuid::new_v4().to_string(),
+                msg_id: next_msg_id,
+                in_reply_to: msg_id,
+            },
+
+            Body::Topology { msg_id, topology } => {
+                self.topology.clear();
+                self.topology = topology.clone();
+                Body::TopologyOk {
+                    in_reply_to: msg_id,
+                    msg_id: next_msg_id,
+                }
+            }
+
+            Body::Read { msg_id } => Body::ReadOk {
+                msg_id: next_msg_id,
+                in_reply_to: msg_id,
+                messages: self.messages.clone().into_iter().collect(),
+            },
+
+            Body::BroadcastOk { .. } => Body::NoOp,
+
+            Body::Broadcast { msg_id, message } => {
+                self.messages.insert(message);
+
+                let all_msg_ids: Vec<u64> = vec![-1; self.topology.len()]
+                    .into_iter()
+                    .map(|_| self.gen_msg_id())
+                    .collect();
+
+                for (idx, node_id) in self.topology.keys().enumerate() {
+                    let mid = all_msg_ids[idx];
+                    outputs.push(Message {
+                        src: self.node_id.clone(),
+                        dest: node_id.clone(),
+                        body: Body::Broadcast {
+                            msg_id: mid,
+                            message: message,
+                        },
+                    })
+                }
+
+                Body::BroadcastOk {
+                    msg_id: next_msg_id,
+                    in_reply_to: msg_id,
+                }
+            }
+
+            Body::Shutdown => Body::Shutdown,
+
+            _ => panic!("invalid message {:#?}", msg),
+        };
+
+        outputs.push(Message {
+            src: msg.dest.clone(),
+            dest: msg.src.clone(),
+            body: out_body,
+        });
+
+        outputs
+    }
     pub fn run(&mut self) {
-        loop {
+        'outer: loop {
             let mut raw_msg = String::new();
 
             io::stdin()
@@ -95,11 +189,21 @@ impl Node {
 
             let msg: Message = serde_json::from_str(&raw_msg).unwrap();
 
-            println!(
-                "{}",
-                serde_json::to_string(&msg.reply(self.gen_msg_id()))
-                    .expect("Failed to serialize msg to string")
-            );
+            let outputs: Vec<Message> = self.handler(msg);
+
+            for m in outputs {
+                if let Body::Shutdown = m.body {
+                    break 'outer;
+                }
+
+                if let Body::NoOp = m.body {
+                    continue;
+                }
+                println!(
+                    "{}",
+                    serde_json::to_string(&m).expect("Failed to serialize msg to string")
+                );
+            }
         }
     }
 }
