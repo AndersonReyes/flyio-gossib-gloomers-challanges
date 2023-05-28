@@ -1,6 +1,0 @@
-{"body":{"msg_id":1,"node_id":"n0","node_ids":["n0","n1","n2"]},"dest":"n0","id":2,"src":"c1"}
-{"id":2,"src":"c2","dest":"n0","body":{"type":"topology","topology":{"n0":["n3", "n2"]},"msg_id":1}}
-{"id":2,"src":"c1","dest":"n0","body":{"type":"broadcast", "message": 100,"msg_id":1}}
-{"id":2,"src":"c1","dest":"n0","body":{"type":"broadcast", "message": 0,"msg_id":1}}
-{"id":2,"src":"n2","dest":"n0","body":{"type":"broadcast", "message": 15,"msg_id":1}}
-{"id":2,"src":"c1","dest":"n0","body":{"type":"read","msg_id":1}}
