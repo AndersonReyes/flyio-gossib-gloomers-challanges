@@ -58,6 +58,10 @@ enum Body {
         messages: Vec<u64>,
     },
 
+    #[serde(rename = "gossip")]
+    Gossip { msg_id: u64, messages: Vec<u64> },
+    #[serde(rename = "gossip_ok")]
+    GossipOk { msg_id: u64, messages: Vec<u64> },
     #[serde(rename = "shutdown")]
     Shutdown,
 
@@ -77,6 +81,7 @@ struct Node {
     topology: HashMap<String, Vec<String>>,
     node_id: String,
     messages: HashSet<u64>,
+    neighbors_seen: HashMap<String, HashSet<u64>>,
 }
 
 impl Node {
@@ -85,6 +90,7 @@ impl Node {
             counter: 0,
             topology: HashMap::new(),
             messages: HashSet::new(),
+            neighbors_seen: HashMap::new(),
             node_id: String::new(),
         }
     }
@@ -139,26 +145,62 @@ impl Node {
             },
 
             Body::BroadcastOk { .. } => Body::NoOp,
+            Body::GossipOk { messages, .. } => {
+                // Ack the messages have been seen by node by storing the reply
+                self.neighbors_seen
+                    .entry(msg.src.clone())
+                    .or_insert(HashSet::new())
+                    .extend(messages);
+                Body::NoOp
+            }
+            Body::Gossip { messages, .. } => {
+                self.messages.extend(&messages);
+                // Also add the messages to be seen by src node
+                self.neighbors_seen
+                    .entry(msg.src.clone())
+                    .or_insert(HashSet::new())
+                    .extend(messages.clone());
+
+                // Add this nodes messages to the reply so we can tell src node
+                // what this node has seen in same gossip interaction.
+                // This allows us to better gossip and eventually propagate all messages even
+                // during network partitions provided there is at least one path to another node.
+                let mut reply_msgs = messages.clone();
+                reply_msgs.extend(&self.messages);
+
+                Body::GossipOk {
+                    msg_id: next_msg_id,
+                    messages: reply_msgs,
+                }
+            }
 
             Body::Broadcast { msg_id, message } => {
                 self.messages.insert(message);
 
+                // for each neighbor initiate gossip with the updated messsages vector
                 let neighbors: Vec<String> = self.topology.keys().map(|k| k.clone()).collect();
-                let msgs = self.messages.clone();
 
                 for node_id in neighbors {
-                    for message in &msgs {
-                        let mid = self.gen_msg_id();
+                    let known_msgs = self
+                        .neighbors_seen
+                        .entry(node_id.clone())
+                        .or_insert(HashSet::new());
 
-                        outputs.push(Message {
-                            src: self.node_id.clone(),
-                            dest: node_id.clone(),
-                            body: Body::Broadcast {
-                                msg_id: mid,
-                                message: *message,
-                            },
-                        })
-                    }
+                    let unknown_msgs: Vec<u64> = self
+                        .messages
+                        .symmetric_difference(&known_msgs)
+                        .map(|f| f.to_owned())
+                        .collect();
+                    let mid = self.gen_msg_id();
+
+                    outputs.push(Message {
+                        src: self.node_id.clone(),
+                        dest: node_id.clone(),
+                        body: Body::Gossip {
+                            msg_id: mid,
+                            messages: unknown_msgs,
+                        },
+                    })
                 }
 
                 Body::BroadcastOk {
