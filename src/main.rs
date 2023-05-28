@@ -143,21 +143,22 @@ impl Node {
             Body::Broadcast { msg_id, message } => {
                 self.messages.insert(message);
 
-                let all_msg_ids: Vec<u64> = vec![-1; self.topology.len()]
-                    .into_iter()
-                    .map(|_| self.gen_msg_id())
-                    .collect();
+                let neighbors: Vec<String> = self.topology.keys().map(|k| k.clone()).collect();
+                let msgs = self.messages.clone();
 
-                for (idx, node_id) in self.topology.keys().enumerate() {
-                    let mid = all_msg_ids[idx];
-                    outputs.push(Message {
-                        src: self.node_id.clone(),
-                        dest: node_id.clone(),
-                        body: Body::Broadcast {
-                            msg_id: mid,
-                            message: message,
-                        },
-                    })
+                for node_id in neighbors {
+                    for message in &msgs {
+                        let mid = self.gen_msg_id();
+
+                        outputs.push(Message {
+                            src: self.node_id.clone(),
+                            dest: node_id.clone(),
+                            body: Body::Broadcast {
+                                msg_id: mid,
+                                message: *message,
+                            },
+                        })
+                    }
                 }
 
                 Body::BroadcastOk {
