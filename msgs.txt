@@ -1,0 +1,7 @@
+{"src": "A", "dest": "B", "body": {"type":"init","msg_id":1,"node_id":"n3","node_ids":["n1","n2","n3"]}}
+{"src": "A", "dest": "B", "body": {"type":"read", "msg_id": 1}}
+{"src": "A", "dest": "B", "body": {"type":"topology","msg_id": 1 , "topology":{"n1":["n2","n3"], "n4": []}}}
+{"src": "A", "dest": "B", "body": {"type":"broadcast", "msg_id": 1, "message": 5}}
+{"src": "n1", "dest": "n3", "body": {"type":"gossip_ok", "msg_id": 1, "messages": [5]}}
+{"src": "A", "dest": "B", "body": {"type":"read", "msg_id": 1}}
+{"src": "A", "dest": "B", "body": {"type":"shutdown", "msg_id": 1}}
