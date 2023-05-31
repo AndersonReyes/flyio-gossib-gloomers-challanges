@@ -76,6 +76,16 @@ struct Message {
     pub body: Body,
 }
 
+impl Message {
+    fn reply(&self, body: Body) -> Message {
+        Message {
+            src: self.dest.clone(),
+            dest: self.src.clone(),
+            body,
+        }
+    }
+}
+
 struct Node {
     counter: u64,
     node_id: String,
@@ -100,34 +110,32 @@ impl Node {
         self.counter
     }
 
-    fn handler(&mut self, msg: Message) -> Vec<Message> {
+    fn handler(&mut self, msg: Message) -> Option<Message> {
         let next_msg_id = self.gen_msg_id();
 
-        // allows us to inject other messages in the output as well.
-        // See Broadcast handler for example.
-        let mut outputs: Vec<Message> = vec![];
+        let mut reply = msg.reply(Body::NoOp);
 
-        let out_body: Body = match msg.body {
+        let body: Option<Body> = match msg.body {
             Body::Init {
                 msg_id, node_id, ..
             } => {
                 self.node_id = node_id;
 
-                Body::InitOk {
+                Some(Body::InitOk {
                     in_reply_to: msg_id,
                     msg_id: next_msg_id,
-                }
+                })
             }
-            Body::Echo { msg_id, echo } => Body::EchoOk {
+            Body::Echo { msg_id, echo } => Some(Body::EchoOk {
                 msg_id: next_msg_id,
                 in_reply_to: msg_id,
                 echo: echo.clone(),
-            },
-            Body::Generate { msg_id } => Body::GenerateOk {
+            }),
+            Body::Generate { msg_id } => Some(Body::GenerateOk {
                 id: Uuid::new_v4().to_string(),
                 msg_id: next_msg_id,
                 in_reply_to: msg_id,
-            },
+            }),
 
             Body::Topology { msg_id, topology } => {
                 self.neighbors = topology
@@ -137,26 +145,27 @@ impl Node {
                     .map(|s| s.clone())
                     .collect();
 
-                Body::TopologyOk {
+                Some(Body::TopologyOk {
                     in_reply_to: msg_id,
                     msg_id: next_msg_id,
-                }
+                })
             }
 
-            Body::Read { msg_id } => Body::ReadOk {
+            Body::Read { msg_id } => Some(Body::ReadOk {
                 msg_id: next_msg_id,
                 in_reply_to: msg_id,
                 messages: self.messages.clone().into_iter().collect(),
-            },
+            }),
 
-            Body::BroadcastOk { .. } => Body::NoOp,
+            Body::BroadcastOk { .. } => None,
             Body::GossipOk { messages, .. } => {
                 // Ack the messages have been seen by node by storing the reply
                 self.neighbors_seen
                     .entry(msg.src.clone())
                     .or_insert(HashSet::new())
                     .extend(messages);
-                Body::NoOp
+
+                None
             }
             Body::Gossip { messages, .. } => {
                 self.messages.extend(&messages);
@@ -173,54 +182,29 @@ impl Node {
                 let mut reply_msgs = messages.clone();
                 reply_msgs.extend(&self.messages);
 
-                Body::GossipOk {
+                Some(Body::GossipOk {
                     messages: reply_msgs,
-                }
+                })
             }
 
             Body::Broadcast { msg_id, message } => {
                 self.messages.insert(message);
 
-                for node_id in &self.neighbors {
-                    let known_msgs = self
-                        .neighbors_seen
-                        .entry(node_id.clone())
-                        .or_insert(HashSet::new());
-
-                    let unknown_msgs: Vec<u64> = self
-                        .messages
-                        .symmetric_difference(&known_msgs)
-                        .map(|f| f.to_owned())
-                        .collect();
-
-                    outputs.push(Message {
-                        src: self.node_id.clone(),
-                        dest: node_id.clone(),
-                        body: Body::Gossip {
-                            messages: unknown_msgs,
-                        },
-                    })
-                }
-
-                Body::BroadcastOk {
+                Some(Body::BroadcastOk {
                     msg_id: next_msg_id,
                     in_reply_to: msg_id,
-                }
+                })
             }
-
-            Body::Shutdown => Body::Shutdown,
 
             _ => panic!("invalid message {:#?}", msg),
         };
 
-        outputs.push(Message {
-            src: msg.dest.clone(),
-            dest: msg.src.clone(),
-            body: out_body,
-        });
-
-        outputs
+        body.map(|b| {
+            reply.body = b;
+            reply
+        })
     }
+
     pub fn run(&mut self) {
         'outer: loop {
             let mut raw_msg = String::new();
@@ -235,23 +219,21 @@ impl Node {
                 break 'outer;
             }
 
-            let outputs: Vec<Message> = self.handler(msg);
+            let reply = self.handler(msg);
 
-            for m in outputs {
-                if let Body::NoOp = m.body {
-                    continue;
-                }
+            reply.map(|m| {
                 println!(
                     "{}",
                     serde_json::to_string(&m).expect("Failed to serialize msg to string")
                 );
-            }
+            });
         }
     }
 }
 
 fn main() -> Result<()> {
     let mut node = Node::new();
+
     node.run();
     Ok(())
 }
