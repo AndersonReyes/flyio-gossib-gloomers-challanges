@@ -78,9 +78,9 @@ struct Message {
 
 struct Node {
     counter: u64,
-    topology: HashMap<String, Vec<String>>,
     node_id: String,
     messages: HashSet<u64>,
+    neighbors: HashSet<String>,
     neighbors_seen: HashMap<String, HashSet<u64>>,
 }
 
@@ -88,7 +88,7 @@ impl Node {
     pub fn new() -> Self {
         Self {
             counter: 0,
-            topology: HashMap::new(),
+            neighbors: HashSet::new(),
             messages: HashSet::new(),
             neighbors_seen: HashMap::new(),
             node_id: String::new(),
@@ -130,8 +130,13 @@ impl Node {
             },
 
             Body::Topology { msg_id, topology } => {
-                self.topology.clear();
-                self.topology = topology.clone();
+                self.neighbors = topology
+                    .get(&self.node_id)
+                    .expect("Node not in topology")
+                    .into_iter()
+                    .map(|s| s.clone())
+                    .collect();
+
                 Body::TopologyOk {
                     in_reply_to: msg_id,
                     msg_id: next_msg_id,
@@ -176,12 +181,7 @@ impl Node {
             Body::Broadcast { msg_id, message } => {
                 self.messages.insert(message);
 
-                // for each neighbor initiate gossip with the updated messsages vector
-                // // TODO: to reduce the number of messages per broadcast can we pick 3 nodes at
-                // random? instead of sending to all.
-                let neighbors: Vec<String> = self.topology.keys().map(|k| k.clone()).collect();
-
-                for node_id in neighbors {
+                for node_id in &self.neighbors {
                     let known_msgs = self
                         .neighbors_seen
                         .entry(node_id.clone())
