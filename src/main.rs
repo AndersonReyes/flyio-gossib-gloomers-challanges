@@ -234,13 +234,13 @@ impl Node {
 
             let msg: Message = serde_json::from_str(&raw_msg).unwrap();
 
+            if let Body::Shutdown = msg.body {
+                break 'outer;
+            }
+
             let outputs: Vec<Message> = self.handler(msg);
 
             for m in outputs {
-                if let Body::Shutdown = m.body {
-                    break 'outer;
-                }
-
                 if let Body::NoOp = m.body {
                     continue;
                 }
