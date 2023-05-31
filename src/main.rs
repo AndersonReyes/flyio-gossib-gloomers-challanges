@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
-use serde_json::Result;
 use std::collections::{HashMap, HashSet};
-use std::io;
+use std::io::{self, BufRead};
+use std::sync::mpsc::Sender;
 use uuid::Uuid;
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -62,6 +62,8 @@ enum Body {
     Gossip { messages: Vec<u64> },
     #[serde(rename = "gossip_ok")]
     GossipOk { messages: Vec<u64> },
+    #[serde(rename = "gossip_ok")]
+    GossipInit,
     #[serde(rename = "shutdown")]
     Shutdown,
 
@@ -110,7 +112,19 @@ impl Node {
         self.counter
     }
 
-    fn handler(&mut self, msg: Message) -> Option<Message> {
+    fn gossip(tx: Sender<Message>) {
+        std::thread::spawn(move || loop {
+            std::thread::sleep(std::time::Duration::from_millis(100));
+            tx.send(Message {
+                src: String::default(),
+                dest: String::default(),
+                body: Body::GossipInit,
+            })
+            .unwrap();
+        });
+    }
+
+    fn handler(&mut self, msg: Message, buff: &mut Vec<Message>) {
         let next_msg_id = self.gen_msg_id();
 
         let mut reply = msg.reply(Body::NoOp);
@@ -126,11 +140,13 @@ impl Node {
                     msg_id: next_msg_id,
                 })
             }
+
             Body::Echo { msg_id, echo } => Some(Body::EchoOk {
                 msg_id: next_msg_id,
                 in_reply_to: msg_id,
                 echo: echo.clone(),
             }),
+
             Body::Generate { msg_id } => Some(Body::GenerateOk {
                 id: Uuid::new_v4().to_string(),
                 msg_id: next_msg_id,
@@ -158,33 +174,42 @@ impl Node {
             }),
 
             Body::BroadcastOk { .. } => None,
-            Body::GossipOk { messages, .. } => {
-                // Ack the messages have been seen by node by storing the reply
-                self.neighbors_seen
-                    .entry(msg.src.clone())
-                    .or_insert(HashSet::new())
-                    .extend(messages);
 
+            Body::GossipInit => {
+                for node_id in &self.neighbors {
+                    let known_msgs = self
+                        .neighbors_seen
+                        .entry(node_id.clone())
+                        .or_insert(HashSet::new());
+
+                    let unknown_msgs: Vec<u64> = self
+                        .messages
+                        .symmetric_difference(&known_msgs)
+                        .map(|f| f.to_owned())
+                        .collect();
+
+                    if unknown_msgs.len() != 0 {
+                        buff.push(Message {
+                            src: self.node_id.clone(),
+                            dest: node_id.clone(),
+                            body: Body::Gossip {
+                                messages: unknown_msgs,
+                            },
+                        })
+                    }
+                }
                 None
             }
+
             Body::Gossip { messages, .. } => {
-                self.messages.extend(&messages);
-                // Also add the messages to be seen by src node
                 self.neighbors_seen
                     .entry(msg.src.clone())
                     .or_insert(HashSet::new())
                     .extend(messages.clone());
 
-                // Add this nodes messages to the reply so we can tell src node
-                // what this node has seen in same gossip interaction.
-                // This allows us to better gossip and eventually propagate all messages even
-                // during network partitions provided there is at least one path to another node.
-                let mut reply_msgs = messages.clone();
-                reply_msgs.extend(&self.messages);
+                self.messages.extend(&messages);
 
-                Some(Body::GossipOk {
-                    messages: reply_msgs,
-                })
+                None
             }
 
             Body::Broadcast { msg_id, message } => {
@@ -201,39 +226,44 @@ impl Node {
 
         body.map(|b| {
             reply.body = b;
-            reply
-        })
-    }
-
-    pub fn run(&mut self) {
-        'outer: loop {
-            let mut raw_msg = String::new();
-
-            io::stdin()
-                .read_line(&mut raw_msg)
-                .expect("failed to read from stdin");
-
-            let msg: Message = serde_json::from_str(&raw_msg).unwrap();
-
-            if let Body::Shutdown = msg.body {
-                break 'outer;
-            }
-
-            let reply = self.handler(msg);
-
-            reply.map(|m| {
-                println!(
-                    "{}",
-                    serde_json::to_string(&m).expect("Failed to serialize msg to string")
-                );
-            });
-        }
+            buff.push(reply)
+        });
     }
 }
 
-fn main() -> Result<()> {
-    let mut node = Node::new();
+fn main() -> Result<(), std::sync::mpsc::SendError<Message>> {
+    let (tx, rx) = std::sync::mpsc::channel();
 
-    node.run();
+    Node::gossip(tx.clone());
+
+    let t = std::thread::spawn(move || {
+        for line in io::stdin().lock().lines() {
+            let line = line.expect("Failed to read line");
+            let msg: Message = serde_json::from_str(&line).unwrap();
+
+            if let Body::Shutdown = msg.body {
+                break;
+            }
+
+            tx.send(msg).unwrap();
+        }
+
+        Ok::<(), std::sync::mpsc::SendError<Message>>(())
+    });
+
+    let mut node = Node::new();
+    for m in rx {
+        let mut replies: Vec<Message> = Vec::new();
+        node.handler(m, &mut replies);
+
+        for reply in replies {
+            println!(
+                "{}",
+                serde_json::to_string(&reply).expect("Failed to serialize msg to string")
+            );
+        }
+    }
+
+    t.join().unwrap().unwrap();
     Ok(())
 }
