@@ -59,9 +59,9 @@ enum Body {
     },
 
     #[serde(rename = "gossip")]
-    Gossip { msg_id: u64, messages: Vec<u64> },
+    Gossip { messages: Vec<u64> },
     #[serde(rename = "gossip_ok")]
-    GossipOk { msg_id: u64, messages: Vec<u64> },
+    GossipOk { messages: Vec<u64> },
     #[serde(rename = "shutdown")]
     Shutdown,
 
@@ -169,7 +169,6 @@ impl Node {
                 reply_msgs.extend(&self.messages);
 
                 Body::GossipOk {
-                    msg_id: next_msg_id,
                     messages: reply_msgs,
                 }
             }
@@ -193,13 +192,11 @@ impl Node {
                         .symmetric_difference(&known_msgs)
                         .map(|f| f.to_owned())
                         .collect();
-                    let mid = self.gen_msg_id();
 
                     outputs.push(Message {
                         src: self.node_id.clone(),
                         dest: node_id.clone(),
                         body: Body::Gossip {
-                            msg_id: mid,
                             messages: unknown_msgs,
                         },
                     })
