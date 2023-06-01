@@ -124,6 +124,25 @@ impl Node {
         });
     }
 
+    fn start_parsing(
+        tx: Sender<Message>,
+    ) -> std::thread::JoinHandle<Result<(), std::sync::mpsc::SendError<Message>>> {
+        std::thread::spawn(move || {
+            for line in io::stdin().lock().lines() {
+                let line = line.expect("Failed to read line");
+                let msg: Message = serde_json::from_str(&line).unwrap();
+
+                if let Body::Shutdown = msg.body {
+                    break;
+                }
+
+                tx.send(msg).unwrap();
+            }
+
+            Ok::<(), std::sync::mpsc::SendError<Message>>(())
+        })
+    }
+
     fn handler(&mut self, msg: Message, buff: &mut Vec<Message>) {
         let next_msg_id = self.gen_msg_id();
 
@@ -235,21 +254,7 @@ fn main() -> Result<(), std::sync::mpsc::SendError<Message>> {
     let (tx, rx) = std::sync::mpsc::channel();
 
     Node::gossip(tx.clone());
-
-    let t = std::thread::spawn(move || {
-        for line in io::stdin().lock().lines() {
-            let line = line.expect("Failed to read line");
-            let msg: Message = serde_json::from_str(&line).unwrap();
-
-            if let Body::Shutdown = msg.body {
-                break;
-            }
-
-            tx.send(msg).unwrap();
-        }
-
-        Ok::<(), std::sync::mpsc::SendError<Message>>(())
-    });
+    let t = Node::start_parsing(tx);
 
     let mut node = Node::new();
     for m in rx {
