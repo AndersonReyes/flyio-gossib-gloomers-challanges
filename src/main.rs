@@ -1,7 +1,8 @@
-use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::io::{self, BufRead};
 use std::sync::mpsc::Sender;
+
+use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -55,7 +56,7 @@ enum Body {
     ReadOk {
         msg_id: u64,
         in_reply_to: u64,
-        messages: Vec<u64>,
+        value: i64,
     },
 
     #[serde(rename = "gossip")]
@@ -64,6 +65,12 @@ enum Body {
     GossipOk { messages: Vec<u64> },
     #[serde(rename = "gossip_ok")]
     GossipInit,
+
+    #[serde(rename = "add")]
+    Add { delta: i64, msg_id: u64 },
+    #[serde(rename = "add_ok")]
+    AddOk { msg_id: u64, in_reply_to: u64 },
+
     #[serde(rename = "shutdown")]
     Shutdown,
 
@@ -89,7 +96,7 @@ impl Message {
 }
 
 struct Node {
-    counter: u64,
+    next_msg_id: u64,
     node_id: String,
     messages: HashSet<u64>,
     neighbors: HashSet<String>,
@@ -99,7 +106,7 @@ struct Node {
 impl Node {
     pub fn new() -> Self {
         Self {
-            counter: 0,
+            next_msg_id: 0,
             neighbors: HashSet::new(),
             messages: HashSet::new(),
             neighbors_seen: HashMap::new(),
@@ -108,8 +115,8 @@ impl Node {
     }
 
     fn gen_msg_id(&mut self) -> u64 {
-        self.counter += 1;
-        self.counter
+        self.next_msg_id += 1;
+        self.next_msg_id
     }
 
     fn gossip(tx: Sender<Message>) {
@@ -130,7 +137,8 @@ impl Node {
         std::thread::spawn(move || {
             for line in io::stdin().lock().lines() {
                 let line = line.expect("Failed to read line");
-                let msg: Message = serde_json::from_str(&line).unwrap();
+                let msg: Message =
+                    serde_json::from_str(&line).expect(&format!("failed to parse line: {}", line));
 
                 if let Body::Shutdown = msg.body {
                     break;
@@ -150,9 +158,19 @@ impl Node {
 
         let body: Option<Body> = match msg.body {
             Body::Init {
-                msg_id, node_id, ..
+                msg_id,
+                node_id,
+                node_ids,
+                ..
             } => {
                 self.node_id = node_id;
+                // build initial neighbors from all list
+                self.neighbors = node_ids
+                    .into_iter()
+                    .filter(|nid| nid != &self.node_id)
+                    .collect();
+
+                eprintln!("neighbors: {:#?}", self.neighbors);
 
                 Some(Body::InitOk {
                     in_reply_to: msg_id,
@@ -189,10 +207,20 @@ impl Node {
             Body::Read { msg_id } => Some(Body::ReadOk {
                 msg_id: next_msg_id,
                 in_reply_to: msg_id,
-                messages: self.messages.clone().into_iter().collect(),
+                value: self.dist_next_msg_id.get(),
             }),
 
+            //Body::Read { msg_id } => Some(Body::ReadOk {
+            //    msg_id: next_msg_id,
+            //    in_reply_to: msg_id,
+            //    messages: self.messages.clone().into_iter().collect(),
+            //}),
             Body::BroadcastOk { .. } => None,
+
+            Body::Add { delta, msg_id } => Some(Body::AddOk {
+                msg_id: next_msg_id,
+                in_reply_to: msg_id,
+            }),
 
             Body::GossipInit => {
                 for node_id in &self.neighbors {
