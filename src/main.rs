@@ -5,11 +5,13 @@ use std::sync::mpsc::Sender;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+
+struct KVStore {
+
+}
 #[derive(Serialize, Deserialize, Debug)]
 #[serde(tag = "type")]
-enum Body {
-    #[serde(rename = "echo")]
-    Echo { msg_id: u64, echo: String },
+enum Response {
 
     #[serde(rename = "echo_ok")]
     EchoOk {
@@ -18,18 +20,9 @@ enum Body {
         echo: String,
     },
 
-    #[serde(rename = "init")]
-    Init {
-        msg_id: u64,
-        node_id: String,
-        node_ids: Vec<String>,
-    },
-
     #[serde(rename = "init_ok")]
     InitOk { in_reply_to: u64, msg_id: u64 },
 
-    #[serde(rename = "generate")]
-    Generate { msg_id: u64 },
     #[serde(rename = "generate_ok")]
     GenerateOk {
         id: String,
@@ -37,56 +30,83 @@ enum Body {
         in_reply_to: u64,
     },
 
+    #[serde(rename = "topology_ok")]
+    TopologyOk { msg_id: u64, in_reply_to: u64 },
+
+    #[serde(rename = "broadcast_ok")]
+    BroadcastOk { msg_id: u64, in_reply_to: u64 },
+
+    #[serde(rename = "read_ok")]
+    ReadOk {
+        msg_id: u64,
+        in_reply_to: u64,
+        // value: i64,
+        messages: Vec<u64>
+    },
+
+    #[serde(rename = "gossip_ok")]
+    GossipOk { messages: Vec<u64> },
+
+    #[serde(rename = "add_ok")]
+    AddOk { msg_id: u64, in_reply_to: u64 },
+
+    // Ignore output for messages which provide no response
+    #[serde(rename = "noop")]
+    Ignore,
+
+    #[serde(rename = "gossip")]
+    Gossip { messages: Vec<u64> },
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+#[serde(tag = "type")]
+enum Request {
+    #[serde(rename = "echo")]
+    Echo { msg_id: u64, echo: String },
+
+    #[serde(rename = "init")]
+    Init {
+        msg_id: u64,
+        node_id: String,
+        node_ids: Vec<String>,
+    },
+
+
+    #[serde(rename = "generate")]
+    Generate { msg_id: u64 },
     #[serde(rename = "topology")]
     Topology {
         msg_id: u64,
         topology: HashMap<String, Vec<String>>,
     },
-    #[serde(rename = "topology_ok")]
-    TopologyOk { msg_id: u64, in_reply_to: u64 },
 
     #[serde(rename = "broadcast")]
     Broadcast { msg_id: u64, message: u64 },
-    #[serde(rename = "broadcast_ok")]
-    BroadcastOk { msg_id: u64, in_reply_to: u64 },
 
     #[serde(rename = "read")]
     Read { msg_id: u64 },
-    #[serde(rename = "read_ok")]
-    ReadOk {
-        msg_id: u64,
-        in_reply_to: u64,
-        value: i64,
-    },
 
     #[serde(rename = "gossip")]
     Gossip { messages: Vec<u64> },
-    #[serde(rename = "gossip_ok")]
-    GossipOk { messages: Vec<u64> },
     #[serde(rename = "gossip_ok")]
     GossipInit,
 
     #[serde(rename = "add")]
     Add { delta: i64, msg_id: u64 },
-    #[serde(rename = "add_ok")]
-    AddOk { msg_id: u64, in_reply_to: u64 },
-
     #[serde(rename = "shutdown")]
     Shutdown,
 
-    #[serde(rename = "noop")]
-    NoOp,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
-struct Message {
+struct Message<T> {
     pub src: String,
     pub dest: String,
-    pub body: Body,
+    pub body: T,
 }
 
-impl Message {
-    fn reply(&self, body: Body) -> Message {
+impl<T> Message<T> {
+    fn reply(&self, body: Response) -> Message<Response> {
         Message {
             src: self.dest.clone(),
             dest: self.src.clone(),
@@ -119,45 +139,45 @@ impl Node {
         self.next_msg_id
     }
 
-    fn gossip(tx: Sender<Message>) {
+    fn gossip(tx: Sender<Message<Request>>) {
         std::thread::spawn(move || loop {
             std::thread::sleep(std::time::Duration::from_millis(100));
             tx.send(Message {
                 src: String::default(),
                 dest: String::default(),
-                body: Body::GossipInit,
+                body: Request::GossipInit,
             })
             .unwrap();
         });
     }
 
     fn start_parsing(
-        tx: Sender<Message>,
-    ) -> std::thread::JoinHandle<Result<(), std::sync::mpsc::SendError<Message>>> {
+        tx: Sender<Message<Request>>,
+    ) -> std::thread::JoinHandle<Result<(), std::sync::mpsc::SendError<Message<Request>>>> {
         std::thread::spawn(move || {
             for line in io::stdin().lock().lines() {
                 let line = line.expect("Failed to read line");
-                let msg: Message =
+                let msg: Message<Request> =
                     serde_json::from_str(&line).expect(&format!("failed to parse line: {}", line));
 
-                if let Body::Shutdown = msg.body {
+                if let Request::Shutdown = msg.body {
                     break;
                 }
 
                 tx.send(msg).unwrap();
             }
 
-            Ok::<(), std::sync::mpsc::SendError<Message>>(())
+            Ok::<(), std::sync::mpsc::SendError<Message<Request>>>(())
         })
     }
 
-    fn handler(&mut self, msg: Message, buff: &mut Vec<Message>) {
+    fn handler(&mut self, msg: Message<Request>, buff: &mut Vec<Message<Response>>) {
         let next_msg_id = self.gen_msg_id();
 
-        let mut reply = msg.reply(Body::NoOp);
+        let mut reply = msg.reply(Response::Ignore);
 
-        let body: Option<Body> = match msg.body {
-            Body::Init {
+        let body: Option<Response> = match msg.body {
+            Request::Init {
                 msg_id,
                 node_id,
                 node_ids,
@@ -172,25 +192,25 @@ impl Node {
 
                 eprintln!("neighbors: {:#?}", self.neighbors);
 
-                Some(Body::InitOk {
+                Some(Response::InitOk {
                     in_reply_to: msg_id,
                     msg_id: next_msg_id,
                 })
             }
 
-            Body::Echo { msg_id, echo } => Some(Body::EchoOk {
+            Request::Echo { msg_id, echo } => Some(Response::EchoOk {
                 msg_id: next_msg_id,
                 in_reply_to: msg_id,
                 echo: echo.clone(),
             }),
 
-            Body::Generate { msg_id } => Some(Body::GenerateOk {
+            Request::Generate { msg_id } => Some(Response::GenerateOk {
                 id: Uuid::new_v4().to_string(),
                 msg_id: next_msg_id,
                 in_reply_to: msg_id,
             }),
 
-            Body::Topology { msg_id, topology } => {
+            Request::Topology { msg_id, topology } => {
                 self.neighbors = topology
                     .get(&self.node_id)
                     .expect("Node not in topology")
@@ -198,31 +218,32 @@ impl Node {
                     .map(|s| s.clone())
                     .collect();
 
-                Some(Body::TopologyOk {
+                Some(Response::TopologyOk {
                     in_reply_to: msg_id,
                     msg_id: next_msg_id,
                 })
             }
 
-            Body::Read { msg_id } => Some(Body::ReadOk {
-                msg_id: next_msg_id,
-                in_reply_to: msg_id,
-                value: self.dist_next_msg_id.get(),
-            }),
-
-            //Body::Read { msg_id } => Some(Body::ReadOk {
+            //Request::Read { msg_id } => Some(Response::ReadOk {
             //    msg_id: next_msg_id,
             //    in_reply_to: msg_id,
-            //    messages: self.messages.clone().into_iter().collect(),
+            //    value: -99,
             //}),
-            Body::BroadcastOk { .. } => None,
 
-            Body::Add { delta, msg_id } => Some(Body::AddOk {
+            Request::Read { msg_id } => Some(Response::ReadOk {
                 msg_id: next_msg_id,
                 in_reply_to: msg_id,
+                messages: self.messages.clone().into_iter().collect(),
             }),
 
-            Body::GossipInit => {
+            // Request::BroadcastOk { .. } => None,
+
+            //Request::Add { msg_id, .. } => Some(Response::AddOk {
+            //    msg_id: next_msg_id,
+            //    in_reply_to: msg_id,
+            //}),
+
+            Request::GossipInit => {
                 for node_id in &self.neighbors {
                     let known_msgs = self
                         .neighbors_seen
@@ -239,7 +260,7 @@ impl Node {
                         buff.push(Message {
                             src: self.node_id.clone(),
                             dest: node_id.clone(),
-                            body: Body::Gossip {
+                            body: Response::Gossip {
                                 messages: unknown_msgs,
                             },
                         })
@@ -248,7 +269,7 @@ impl Node {
                 None
             }
 
-            Body::Gossip { messages, .. } => {
+            Request::Gossip { messages, .. } => {
                 self.neighbors_seen
                     .entry(msg.src.clone())
                     .or_insert(HashSet::new())
@@ -259,10 +280,10 @@ impl Node {
                 None
             }
 
-            Body::Broadcast { msg_id, message } => {
+            Request::Broadcast { msg_id, message } => {
                 self.messages.insert(message);
 
-                Some(Body::BroadcastOk {
+                Some(Response::BroadcastOk {
                     msg_id: next_msg_id,
                     in_reply_to: msg_id,
                 })
@@ -276,9 +297,13 @@ impl Node {
             buff.push(reply)
         });
     }
+
+
+    // pub fn send_rpc(msg: &Message) {}
 }
 
-fn main() -> Result<(), std::sync::mpsc::SendError<Message>> {
+
+fn main() -> Result<(), std::sync::mpsc::SendError<Message<Request>>> {
     let (tx, rx) = std::sync::mpsc::channel();
 
     Node::gossip(tx.clone());
@@ -286,7 +311,7 @@ fn main() -> Result<(), std::sync::mpsc::SendError<Message>> {
 
     let mut node = Node::new();
     for m in rx {
-        let mut replies: Vec<Message> = Vec::new();
+        let mut replies: Vec<Message<Response>> = Vec::new();
         node.handler(m, &mut replies);
 
         for reply in replies {
